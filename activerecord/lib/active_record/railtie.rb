@@ -2,6 +2,7 @@
 
 require "active_record"
 require "rails"
+require "active_support/core_ext/object/try"
 require "active_model/railtie"
 
 # For now, action_controller must always be present with
@@ -27,6 +28,7 @@ module ActiveRecord
 
     config.active_record.use_schema_cache_dump = true
     config.active_record.maintain_test_schema = true
+    config.active_record.has_many_inversing = false
 
     config.active_record.sqlite3 = ActiveSupport::OrderedOptions.new
     config.active_record.sqlite3.represent_boolean_as_integer = nil
@@ -81,10 +83,11 @@ module ActiveRecord
       ActiveSupport.on_load(:active_record) { LogSubscriber.backtrace_cleaner = ::Rails.backtrace_cleaner }
     end
 
-    initializer "active_record.migration_error" do
+    initializer "active_record.migration_error" do |app|
       if config.active_record.delete(:migration_error) == :page_load
         config.app_middleware.insert_after ::ActionDispatch::Callbacks,
-          ActiveRecord::Migration::CheckPending
+          ActiveRecord::Migration::CheckPending,
+          file_watcher: app.config.file_watcher
       end
     end
 
@@ -114,7 +117,7 @@ To keep using the current cache store, you can turn off cache versioning entirel
 
     config.active_record.cache_versioning = false
 
-end_error
+              end_error
             end
           end
         end
@@ -125,7 +128,14 @@ end_error
       if config.active_record.delete(:use_schema_cache_dump)
         config.after_initialize do |app|
           ActiveSupport.on_load(:active_record) do
-            filename = File.join(app.config.paths["db"].first, "schema_cache.yml")
+            db_config = ActiveRecord::Base.configurations.configs_for(
+              env_name: Rails.env,
+              spec_name: "primary",
+            )
+            filename = ActiveRecord::Tasks::DatabaseTasks.cache_dump_filename(
+              db_config.spec_name,
+              schema_cache_path: db_config.schema_cache_path,
+            )
 
             if File.file?(filename)
               current_version = ActiveRecord::Migrator.current_version

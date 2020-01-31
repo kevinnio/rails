@@ -77,6 +77,22 @@ class BasicsTest < ActiveRecord::TestCase
     assert_equal "Post::GeneratedRelationMethods", mod.inspect
   end
 
+  def test_incomplete_schema_loading
+    topic = Topic.first
+    payload = { foo: 42 }
+    topic.update!(content: payload)
+
+    Topic.reset_column_information
+
+    Topic.connection.stub(:lookup_cast_type_from_column, ->(_) { raise "Some Error" }) do
+      assert_raises RuntimeError do
+        Topic.columns_hash
+      end
+    end
+
+    assert_equal payload, Topic.first.content
+  end
+
   def test_column_names_are_escaped
     conn      = ActiveRecord::Base.connection
     classname = conn.class.name[/[^:]*$/]
@@ -1154,7 +1170,7 @@ class BasicsTest < ActiveRecord::TestCase
 
   def test_current_scope_is_reset
     Object.const_set :UnloadablePost, Class.new(ActiveRecord::Base)
-    UnloadablePost.send(:current_scope=, UnloadablePost.all)
+    UnloadablePost.current_scope = UnloadablePost.all
 
     UnloadablePost.unloadable
     klass = UnloadablePost
@@ -1167,6 +1183,16 @@ class BasicsTest < ActiveRecord::TestCase
 
   def test_marshal_round_trip
     expected = posts(:welcome)
+    marshalled = Marshal.dump(expected)
+    actual = Marshal.load(marshalled)
+
+    assert_equal expected.attributes, actual.attributes
+  end
+
+  def test_marshal_inspected_round_trip
+    expected = posts(:welcome)
+    expected.inspect
+
     marshalled = Marshal.dump(expected)
     actual = Marshal.load(marshalled)
 

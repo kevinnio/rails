@@ -106,7 +106,7 @@ module ActiveRecord
   # Wraps the underlying database error as +cause+.
   class StatementInvalid < ActiveRecordError
     def initialize(message = nil, sql: nil, binds: nil)
-      super(message || $!.try(:message))
+      super(message || $!&.message)
       @sql = sql
       @binds = binds
     end
@@ -185,6 +185,10 @@ module ActiveRecord
 
   # Raised when a given database does not exist.
   class NoDatabaseError < StatementInvalid
+  end
+
+  # Raised when creating a database if it exists.
+  class DatabaseAlreadyExists < StatementInvalid
   end
 
   # Raised when PostgreSQL returns 'cached plan must not change result type' and
@@ -334,7 +338,7 @@ module ActiveRecord
   # See the following:
   #
   # * https://www.postgresql.org/docs/current/static/transaction-iso.html
-  # * https://dev.mysql.com/doc/refman/5.7/en/error-messages-server.html#error_er_lock_deadlock
+  # * https://dev.mysql.com/doc/refman/en/server-error-reference.html#error_er_lock_deadlock
   class TransactionRollbackError < StatementInvalid
   end
 

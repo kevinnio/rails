@@ -190,7 +190,13 @@ module ActiveRecord
         klass.disallow_raw_sql!(column_names)
         relation = spawn
         relation.select_values = column_names
-        result = skip_query_cache_if_necessary { klass.connection.select_all(relation.arel, nil) }
+        result = skip_query_cache_if_necessary do
+          if where_clause.contradiction?
+            ActiveRecord::Result.new([], [])
+          else
+            klass.connection.select_all(relation.arel, nil)
+          end
+        end
         result.cast_values(klass.attribute_types)
       end
     end
@@ -321,7 +327,7 @@ module ActiveRecord
         }
         group_columns = group_aliases.zip(group_fields)
 
-        aggregate_alias = column_alias_for("#{operation}_#{column_name.to_s.downcase}")
+        aggregate_alias = column_alias_for("#{operation} #{column_name.to_s.downcase}")
 
         select_values = [
           operation_over_aggregate_column(
@@ -374,8 +380,6 @@ module ActiveRecord
       #   column_alias_for("count(distinct users.id)") # => "count_distinct_users_id"
       #   column_alias_for("count(*)")                 # => "count_all"
       def column_alias_for(field)
-        return field if field.match?(/\A\w{,#{connection.table_alias_length}}\z/)
-
         column_alias = +field
         column_alias.gsub!(/\*/, "all")
         column_alias.gsub!(/\W+/, " ")

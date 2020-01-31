@@ -12,6 +12,7 @@ class ::PG::Connection # :nodoc:
   end
 end
 
+require "active_support/core_ext/object/try"
 require "active_record/connection_adapters/abstract_adapter"
 require "active_record/connection_adapters/statement_pool"
 require "active_record/connection_adapters/postgresql/column"
@@ -361,6 +362,10 @@ module ActiveRecord
         @has_pg_hint_plan
       end
 
+      def supports_common_table_expressions?
+        true
+      end
+
       def supports_lazy_transactions?
         true
       end
@@ -467,6 +472,7 @@ module ActiveRecord
         UNIQUE_VIOLATION      = "23505"
         SERIALIZATION_FAILURE = "40001"
         DEADLOCK_DETECTED     = "40P01"
+        DUPLICATE_DATABASE    = "42P04"
         LOCK_NOT_AVAILABLE    = "55P03"
         QUERY_CANCELED        = "57014"
 
@@ -488,6 +494,8 @@ module ActiveRecord
             SerializationFailure.new(message, sql: sql, binds: binds)
           when DEADLOCK_DETECTED
             Deadlocked.new(message, sql: sql, binds: binds)
+          when DUPLICATE_DATABASE
+            DatabaseAlreadyExists.new(message, sql: sql, binds: binds)
           when LOCK_NOT_AVAILABLE
             LockWaitTimeout.new(message, sql: sql, binds: binds)
           when QUERY_CANCELED
@@ -649,8 +657,11 @@ module ActiveRecord
           else
             result = exec_cache(sql, name, binds)
           end
-          ret = yield result
-          result.clear
+          begin
+            ret = yield result
+          ensure
+            result.clear
+          end
           ret
         end
 
@@ -706,11 +717,10 @@ module ActiveRecord
         #
         # Check here for more details:
         # https://git.postgresql.org/gitweb/?p=postgresql.git;a=blob;f=src/backend/utils/cache/plancache.c#l573
-        CACHED_PLAN_HEURISTIC = "cached plan must not change result type"
         def is_cached_plan_failure?(e)
           pgerror = e.cause
-          code = pgerror.result.result_error_field(PG::PG_DIAG_SQLSTATE)
-          code == FEATURE_NOT_SUPPORTED && pgerror.message.include?(CACHED_PLAN_HEURISTIC)
+          pgerror.result.result_error_field(PG::PG_DIAG_SQLSTATE) == FEATURE_NOT_SUPPORTED &&
+            pgerror.result.result_error_field(PG::PG_DIAG_SOURCE_FUNCTION) == "RevalidateCachedQuery"
         rescue
           false
         end

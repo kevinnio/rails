@@ -52,7 +52,15 @@ module ActiveRecord
           ActiveSupport::Deprecation.warn(<<~MSG.squish)
             NOT conditions will no longer behave as NOR in Rails 6.1.
             To continue using NOR conditions, NOT each conditions manually
-            (`#{ opts.keys.map { |key| ".where.not(#{key.inspect} => ...)" }.join }`).
+            (`#{
+              opts.flat_map { |key, value|
+                if value.is_a?(Hash) && value.size > 1
+                  value.map { |k, v| ".where.not(#{key.inspect} => { #{k.inspect} => ... })" }
+                else
+                  ".where.not(#{key.inspect} => ...)"
+                end
+              }.join
+            }`).
           MSG
           @scope.where_clause += where_clause.invert(:nor)
         else
@@ -62,9 +70,41 @@ module ActiveRecord
         @scope
       end
 
+      # Returns a new relation with left outer joins and where clause to idenitfy
+      # missing relations.
+      #
+      # For example, posts that are missing a related author:
+      #
+      #    Post.where.missing(:author)
+      #    # SELECT "posts".* FROM "posts"
+      #    # LEFT OUTER JOIN "authors" ON "authors"."id" = "posts"."author_id"
+      #    # WHERE "authors"."id" IS NULL
+      #
+      # Additionally, multiple relations can be combined. This will return posts
+      # that are missing both an author and any comments:
+      #
+      #    Post.where.missing(:author, :comments)
+      #    # SELECT "posts".* FROM "posts"
+      #    # LEFT OUTER JOIN "authors" ON "authors"."id" = "posts"."author_id"
+      #    # LEFT OUTER JOIN "comments" ON "comments"."post_id" = "posts"."id"
+      #    # WHERE "authors"."id" IS NULL AND "comments"."id" IS NULL
+      def missing(*args)
+        args.each do |arg|
+          reflection = @scope.klass._reflect_on_association(arg)
+          opts = { reflection.table_name => { reflection.association_primary_key => nil } }
+          @scope.left_outer_joins!(arg)
+          @scope.where!(opts)
+        end
+
+        @scope
+      end
+
       private
         def not_behaves_as_nor?(opts)
-          opts.is_a?(Hash) && opts.size > 1
+          return false unless opts.is_a?(Hash)
+
+          opts.any? { |k, v| v.is_a?(Hash) && v.size > 1 } ||
+            opts.size > 1
         end
     end
 
@@ -72,22 +112,25 @@ module ActiveRecord
     FROZEN_EMPTY_HASH = {}.freeze
 
     Relation::VALUE_METHODS.each do |name|
-      method_name = \
+      method_name, default =
         case name
-        when *Relation::MULTI_VALUE_METHODS then "#{name}_values"
-        when *Relation::SINGLE_VALUE_METHODS then "#{name}_value"
-        when *Relation::CLAUSE_METHODS then "#{name}_clause"
+        when *Relation::MULTI_VALUE_METHODS
+          ["#{name}_values", "FROZEN_EMPTY_ARRAY"]
+        when *Relation::SINGLE_VALUE_METHODS
+          ["#{name}_value", name == :create_with ? "FROZEN_EMPTY_HASH" : "nil"]
+        when *Relation::CLAUSE_METHODS
+          ["#{name}_clause", name == :from ? "Relation::FromClause.empty" : "Relation::WhereClause.empty"]
         end
-      class_eval <<-CODE, __FILE__, __LINE__ + 1
-        def #{method_name}                   # def includes_values
-          default = DEFAULT_VALUES[:#{name}] #   default = DEFAULT_VALUES[:includes]
-          @values.fetch(:#{name}, default)   #   @values.fetch(:includes, default)
-        end                                  # end
 
-        def #{method_name}=(value)           # def includes_values=(value)
-          assert_mutability!                 #   assert_mutability!
-          @values[:#{name}] = value          #   @values[:includes] = value
-        end                                  # end
+      class_eval <<-CODE, __FILE__, __LINE__ + 1
+        def #{method_name}                     # def includes_values
+          @values.fetch(:#{name}, #{default})  #   @values.fetch(:includes, FROZEN_EMPTY_ARRAY)
+        end                                    # end
+
+        def #{method_name}=(value)             # def includes_values=(value)
+          assert_mutability!                   #   assert_mutability!
+          @values[:#{name}] = value            #   @values[:includes] = value
+        end                                    # end
       CODE
     end
 
@@ -138,7 +181,7 @@ module ActiveRecord
     end
 
     def includes!(*args) # :nodoc:
-      args.reject!(&:blank?)
+      args.compact_blank!
       args.flatten!
 
       self.includes_values |= args
@@ -157,7 +200,7 @@ module ActiveRecord
     end
 
     def eager_load!(*args) # :nodoc:
-      self.eager_load_values += args
+      self.eager_load_values |= args
       self
     end
 
@@ -171,7 +214,7 @@ module ActiveRecord
     end
 
     def preload!(*args) # :nodoc:
-      self.preload_values += args
+      self.preload_values |= args
       self
     end
 
@@ -265,7 +308,7 @@ module ActiveRecord
     end
 
     def _select!(*fields) # :nodoc:
-      fields.reject!(&:blank?)
+      fields.compact_blank!
       fields.flatten!
       self.select_values += fields
       self
@@ -320,7 +363,7 @@ module ActiveRecord
     def group!(*args) # :nodoc:
       args.flatten!
 
-      self.group_values += args
+      self.group_values |= args
       self
     end
 
@@ -372,7 +415,7 @@ module ActiveRecord
 
     # Same as #reorder but operates on relation in-place instead of copying.
     def reorder!(*args) # :nodoc:
-      preprocess_order_args(args)
+      preprocess_order_args(args) unless args.all?(&:blank?)
 
       self.reordering_value = true
       self.order_values = args
@@ -433,7 +476,7 @@ module ActiveRecord
             raise ArgumentError, "Called unscope() with invalid unscoping argument ':#{scope}'. Valid arguments are :#{VALID_UNSCOPING_VALUES.to_a.join(", :")}."
           end
           assert_mutability!
-          @values[scope] = DEFAULT_VALUES[scope]
+          @values.delete(scope)
         when Hash
           scope.each do |key, target_value|
             if key != :where
@@ -488,7 +531,7 @@ module ActiveRecord
     def joins!(*args) # :nodoc:
       args.compact!
       args.flatten!
-      self.joins_values += args
+      self.joins_values |= args
       self
     end
 
@@ -506,7 +549,7 @@ module ActiveRecord
     def left_outer_joins!(*args) # :nodoc:
       args.compact!
       args.flatten!
-      self.left_outer_joins_values += args
+      self.left_outer_joins_values |= args
       self
     end
 
@@ -952,7 +995,7 @@ module ActiveRecord
     def optimizer_hints!(*args) # :nodoc:
       args.flatten!
 
-      self.optimizer_hints_values += args
+      self.optimizer_hints_values |= args
       self
     end
 
@@ -965,7 +1008,7 @@ module ActiveRecord
 
     def reverse_order! # :nodoc:
       orders = order_values.uniq
-      orders.reject!(&:blank?)
+      orders.compact_blank!
       self.order_values = reverse_sql_order(orders)
       self
     end
@@ -1053,7 +1096,7 @@ module ActiveRecord
           )
           arel.skip(Arel::Nodes::BindParam.new(offset_attribute))
         end
-        arel.group(*arel_columns(group_values.uniq.reject(&:blank?))) unless group_values.empty?
+        arel.group(*arel_columns(group_values.uniq.compact_blank)) unless group_values.empty?
 
         build_order(arel)
 
@@ -1083,38 +1126,68 @@ module ActiveRecord
         end
       end
 
-      def valid_association_list(associations)
+      def select_association_list(associations)
+        result = []
         associations.each do |association|
           case association
           when Hash, Symbol, Array
-            # valid
+            result << association
           else
-            raise ArgumentError, "only Hash, Symbol and Array are allowed"
+            yield if block_given?
           end
+        end
+        result
+      end
+
+      def valid_association_list(associations)
+        select_association_list(associations) do
+          raise ArgumentError, "only Hash, Symbol and Array are allowed"
         end
       end
 
       def build_left_outer_joins(manager, outer_joins, aliases)
-        buckets = { association_join: valid_association_list(outer_joins) }
+        buckets = Hash.new { |h, k| h[k] = [] }
+        buckets[:association_join] = valid_association_list(outer_joins)
         build_join_query(manager, buckets, Arel::Nodes::OuterJoin, aliases)
       end
 
       def build_joins(manager, joins, aliases)
+        buckets = Hash.new { |h, k| h[k] = [] }
+
         unless left_outer_joins_values.empty?
           left_joins = valid_association_list(left_outer_joins_values.flatten)
-          joins.unshift construct_join_dependency(left_joins, Arel::Nodes::OuterJoin)
+          buckets[:stashed_join] << construct_join_dependency(left_joins, Arel::Nodes::OuterJoin)
         end
 
-        buckets = joins.group_by do |join|
+        if joins.last.is_a?(ActiveRecord::Associations::JoinDependency)
+          buckets[:stashed_join] << joins.pop if joins.last.base_klass == klass
+        end
+
+        joins.map! do |join|
+          if join.is_a?(String)
+            table.create_string_join(Arel.sql(join.strip)) unless join.blank?
+          else
+            join
+          end
+        end.compact_blank!.uniq!
+
+        while joins.first.is_a?(Arel::Nodes::Join)
+          join_node = joins.shift
+          if join_node.is_a?(Arel::Nodes::StringJoin) && !buckets[:stashed_join].empty?
+            buckets[:join_node] << join_node
+          else
+            buckets[:leading_join] << join_node
+          end
+        end
+
+        joins.each do |join|
           case join
-          when String
-            :string_join
           when Hash, Symbol, Array
-            :association_join
+            buckets[:association_join] << join
           when ActiveRecord::Associations::JoinDependency
-            :stashed_join
+            buckets[:stashed_join] << join
           when Arel::Nodes::Join
-            :join_node
+            buckets[:join_node] << join
           else
             raise "unknown class: %s" % join.class.name
           end
@@ -1124,25 +1197,21 @@ module ActiveRecord
       end
 
       def build_join_query(manager, buckets, join_type, aliases)
-        buckets.default = []
-
         association_joins = buckets[:association_join]
         stashed_joins     = buckets[:stashed_join]
-        join_nodes        = buckets[:join_node].tap(&:uniq!)
-        string_joins      = buckets[:string_join].delete_if(&:blank?).map!(&:strip).tap(&:uniq!)
-
-        string_joins.map! { |join| table.create_string_join(Arel.sql(join)) }
+        leading_joins     = buckets[:leading_join]
+        join_nodes        = buckets[:join_node]
 
         join_sources = manager.join_sources
-        join_sources.concat(join_nodes) unless join_nodes.empty?
+        join_sources.concat(leading_joins) unless leading_joins.empty?
 
         unless association_joins.empty? && stashed_joins.empty?
-          alias_tracker = alias_tracker(join_nodes + string_joins, aliases)
+          alias_tracker = alias_tracker(leading_joins + join_nodes, aliases)
           join_dependency = construct_join_dependency(association_joins, join_type)
           join_sources.concat(join_dependency.join_constraints(stashed_joins, alias_tracker))
         end
 
-        join_sources.concat(string_joins) unless string_joins.empty?
+        join_sources.concat(join_nodes) unless join_nodes.empty?
       end
 
       def build_select(arel)
@@ -1184,7 +1253,9 @@ module ActiveRecord
       end
 
       def table_name_matches?(from)
-        /(?:\A|(?<!FROM)\s)(?:\b#{table.name}\b|#{connection.quote_table_name(table.name)})(?!\.)/i.match?(from.to_s)
+        table_name = Regexp.escape(table.name)
+        quoted_table_name = Regexp.escape(connection.quote_table_name(table.name))
+        /(?:\A|(?<!FROM)\s)(?:\b#{table_name}\b|#{quoted_table_name})(?!\.)/i.match?(from.to_s)
       end
 
       def reverse_sql_order(order_query)
@@ -1227,7 +1298,7 @@ module ActiveRecord
 
       def build_order(arel)
         orders = order_values.uniq
-        orders.reject!(&:blank?)
+        orders.compact_blank!
 
         arel.order(*orders) unless orders.empty?
       end
@@ -1321,8 +1392,8 @@ module ActiveRecord
       def structurally_incompatible_values_for_or(other)
         values = other.values
         STRUCTURAL_OR_METHODS.reject do |method|
-          default = DEFAULT_VALUES[method]
-          @values.fetch(method, default) == values.fetch(method, default)
+          v1, v2 = @values[method], values[method]
+          v1 == v2 || (!v1 || v1.empty?) && (!v2 || v2.empty?)
         end
       end
 
@@ -1330,16 +1401,5 @@ module ActiveRecord
         @where_clause_factory ||= Relation::WhereClauseFactory.new(klass, predicate_builder)
       end
       alias having_clause_factory where_clause_factory
-
-      DEFAULT_VALUES = {
-        create_with: FROZEN_EMPTY_HASH,
-        where: Relation::WhereClause.empty,
-        having: Relation::WhereClause.empty,
-        from: Relation::FromClause.empty
-      }
-
-      Relation::MULTI_VALUE_METHODS.each do |value|
-        DEFAULT_VALUES[value] ||= FROZEN_EMPTY_ARRAY
-      end
   end
 end

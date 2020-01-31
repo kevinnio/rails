@@ -117,6 +117,7 @@ ActiveRecord::Schema.define do
     t.column :cover, :string, default: "hard"
     t.string :isbn, **case_sensitive_options
     t.datetime :published_on
+    t.boolean :boolean_status
     t.index [:author_id, :name], unique: true
     t.index :isbn, where: "published_on IS NOT NULL", unique: true
   end
@@ -563,6 +564,10 @@ ActiveRecord::Schema.define do
     t.string   :type
   end
 
+  create_table :mice, force: true do |t|
+    t.string   :name
+  end
+
   create_table :movies, force: true, id: false do |t|
     t.primary_key :movieid
     t.string      :name
@@ -575,10 +580,13 @@ ActiveRecord::Schema.define do
   create_table :numeric_data, force: true do |t|
     t.decimal :bank_balance, precision: 10, scale: 2
     t.decimal :big_bank_balance, precision: 15, scale: 2
+    t.decimal :unscaled_bank_balance, precision: 10
     t.decimal :world_population, precision: 20, scale: 0
     t.decimal :my_house_population, precision: 2, scale: 0
+    t.decimal :decimal_number
     t.decimal :decimal_number_with_default, precision: 3, scale: 2, default: 2.78
     t.float   :temperature
+    t.decimal :decimal_number_big_precision, precision: 20
     # Oracle/SQLServer supports precision up to 38
     if current_adapter?(:OracleAdapter, :SQLServerAdapter)
       t.decimal :atoms_in_universe, precision: 38, scale: 0
@@ -742,6 +750,7 @@ ActiveRecord::Schema.define do
     t.string :estimate_of_type
     t.integer :estimate_of_id
     t.integer :price
+    t.string :currency
   end
 
   create_table :products, force: true do |t|
@@ -841,6 +850,10 @@ ActiveRecord::Schema.define do
     else
       t.datetime :updated_at
     end
+  end
+
+  create_table :squeaks, force: true do |t|
+    t.integer :mouse_id
   end
 
   create_table :prisoners, force: true do |t|
@@ -1062,6 +1075,7 @@ ActiveRecord::Schema.define do
   create_table :cake_designers, force: true do |t|
   end
   create_table :drink_designers, force: true do |t|
+    t.string :name
   end
   create_table :chefs, force: true do |t|
     t.integer :employable_id
@@ -1069,6 +1083,7 @@ ActiveRecord::Schema.define do
     t.integer :department_id
     t.string :employable_list_type
     t.integer :employable_list_id
+    t.timestamps
   end
   create_table :recipes, force: true do |t|
     t.integer :chef_id
@@ -1106,6 +1121,7 @@ ActiveRecord::Schema.define do
 
   create_table :non_primary_keys, force: true, id: false do |t|
     t.integer :id
+    t.datetime :created_at
   end
 end
 

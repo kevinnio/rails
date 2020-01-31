@@ -678,6 +678,13 @@ class CalculationsTest < ActiveRecord::TestCase
     assert_equal [1, 2, 3, 4, 5], Topic.order(:id).pluck(:id)
   end
 
+  def test_pluck_with_empty_in
+    Topic.send(:load_schema)
+    assert_no_queries do
+      assert_equal [], Topic.where(id: []).pluck(:id)
+    end
+  end
+
   def test_pluck_without_column_names
     if current_adapter?(:OracleAdapter)
       assert_equal [[1, "Firm", 1, nil, "37signals", nil, 1, nil, nil]], Company.order(:id).limit(1).pluck
@@ -771,7 +778,7 @@ class CalculationsTest < ActiveRecord::TestCase
   end
 
   def test_pluck_with_join
-    assert_equal [[2, 2], [4, 4]], Reply.includes(:topic).pluck(:id, :"topics.id")
+    assert_equal [[2, 2], [4, 4]], Reply.includes(:topic).order(:id).pluck(:id, :"topics.id")
   end
 
   def test_group_by_with_order_by_virtual_count_attribute
@@ -798,6 +805,13 @@ class CalculationsTest < ActiveRecord::TestCase
     assert_equal expected, actual
   end
 
+  def test_group_by_with_quoted_count_and_order_by_alias
+    quoted_posts_id = Post.connection.quote_table_name("posts.id")
+    expected = { "SpecialPost" => 1, "StiPost" => 1, "Post" => 9 }
+    actual = Post.group(:type).order("count_posts_id").count(quoted_posts_id)
+    assert_equal expected, actual
+  end
+
   def test_pluck_not_auto_table_name_prefix_if_column_included
     Company.create!(name: "test", contracts: [Contract.new(developer_id: 7)])
     ids = Company.includes(:contracts).pluck(:developer_id)
@@ -820,7 +834,7 @@ class CalculationsTest < ActiveRecord::TestCase
 
   def test_pluck_with_multiple_columns_and_selection_clause
     assert_equal [[1, 50], [2, 50], [3, 50], [4, 60], [5, 55], [6, 53]],
-      Account.pluck("id, credit_limit")
+      Account.order(:id).pluck("id, credit_limit")
   end
 
   def test_pluck_with_multiple_columns_and_includes
@@ -891,14 +905,18 @@ class CalculationsTest < ActiveRecord::TestCase
 
   def test_pick_one
     assert_equal "The First Topic", Topic.order(:id).pick(:heading)
-    assert_nil Topic.none.pick(:heading)
-    assert_nil Topic.where(id: 9999999999999999999).pick(:heading)
+    assert_no_queries do
+      assert_nil Topic.none.pick(:heading)
+      assert_nil Topic.where(id: 9999999999999999999).pick(:heading)
+    end
   end
 
   def test_pick_two
     assert_equal ["David", "david@loudthinking.com"], Topic.order(:id).pick(:author_name, :author_email_address)
-    assert_nil Topic.none.pick(:author_name, :author_email_address)
-    assert_nil Topic.where(id: 9999999999999999999).pick(:author_name, :author_email_address)
+    assert_no_queries do
+      assert_nil Topic.none.pick(:author_name, :author_email_address)
+      assert_nil Topic.where(id: 9999999999999999999).pick(:author_name, :author_email_address)
+    end
   end
 
   def test_pick_delegate_to_all
@@ -950,6 +968,90 @@ class CalculationsTest < ActiveRecord::TestCase
 
   def test_group_by_attribute_with_custom_type
     assert_equal({ "proposed" => 2, "published" => 2 }, Book.group(:status).count)
+  end
+
+  def test_select_avg_with_group_by_as_virtual_attribute_with_sql
+    rails_core = companies(:rails_core)
+
+    sql = <<~SQL
+      SELECT firm_id, AVG(credit_limit) AS avg_credit_limit
+      FROM accounts
+      WHERE firm_id = ?
+      GROUP BY firm_id
+      LIMIT 1
+    SQL
+
+    account = Account.find_by_sql([sql, rails_core]).first
+
+    # id was not selected, so it should be nil
+    # (cannot select id because it wasn't used in the GROUP BY clause)
+    assert_nil account.id
+
+    # firm_id was explicitly selected, so it should be present
+    assert_equal(rails_core, account.firm)
+
+    # avg_credit_limit should be present as a virtual attribute
+    assert_equal(52.5, account.avg_credit_limit)
+  end
+
+  def test_select_avg_with_group_by_as_virtual_attribute_with_ar
+    rails_core = companies(:rails_core)
+
+    account = Account
+      .select(:firm_id, "AVG(credit_limit) AS avg_credit_limit")
+      .where(firm: rails_core)
+      .group(:firm_id)
+      .take!
+
+    # id was not selected, so it should be nil
+    # (cannot select id because it wasn't used in the GROUP BY clause)
+    assert_nil account.id
+
+    # firm_id was explicitly selected, so it should be present
+    assert_equal(rails_core, account.firm)
+
+    # avg_credit_limit should be present as a virtual attribute
+    assert_equal(52.5, account.avg_credit_limit)
+  end
+
+  def test_select_avg_with_joins_and_group_by_as_virtual_attribute_with_sql
+    rails_core = companies(:rails_core)
+
+    sql = <<~SQL
+      SELECT companies.*, AVG(accounts.credit_limit) AS avg_credit_limit
+      FROM companies
+      INNER JOIN accounts ON companies.id = accounts.firm_id
+      WHERE companies.id = ?
+      GROUP BY companies.id
+      LIMIT 1
+    SQL
+
+    firm = DependentFirm.find_by_sql([sql, rails_core]).first
+
+    # all the DependentFirm attributes should be present
+    assert_equal rails_core, firm
+    assert_equal rails_core.name, firm.name
+
+    # avg_credit_limit should be present as a virtual attribute
+    assert_equal(52.5, firm.avg_credit_limit)
+  end
+
+  def test_select_avg_with_joins_and_group_by_as_virtual_attribute_with_ar
+    rails_core = companies(:rails_core)
+
+    firm = DependentFirm
+      .select("companies.*", "AVG(accounts.credit_limit) AS avg_credit_limit")
+      .where(id: rails_core)
+      .joins(:account)
+      .group(:id)
+      .take!
+
+    # all the DependentFirm attributes should be present
+    assert_equal rails_core, firm
+    assert_equal rails_core.name, firm.name
+
+    # avg_credit_limit should be present as a virtual attribute
+    assert_equal(52.5, firm.avg_credit_limit)
   end
 
   def test_count_with_block_and_column_name_raises_an_error

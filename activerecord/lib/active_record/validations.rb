@@ -40,15 +40,16 @@ module ActiveRecord
     include ActiveModel::Validations
 
     # The validation process on save can be skipped by passing <tt>validate: false</tt>.
+    # The validation context can be changed by passing <tt>context: context</tt>.
     # The regular {ActiveRecord::Base#save}[rdoc-ref:Persistence#save] method is replaced
     # with this when the validations module is mixed in, which it is by default.
-    def save(options = {})
+    def save(**options)
       perform_validations(options) ? super : false
     end
 
     # Attempts to save the record just like {ActiveRecord::Base#save}[rdoc-ref:Base#save] but
     # will raise an ActiveRecord::RecordInvalid exception instead of returning +false+ if the record is not valid.
-    def save!(options = {})
+    def save!(**options)
       perform_validations(options) ? super : raise_validation_error
     end
 
@@ -90,3 +91,4 @@ require "active_record/validations/uniqueness"
 require "active_record/validations/presence"
 require "active_record/validations/absence"
 require "active_record/validations/length"
+require "active_record/validations/numericality"

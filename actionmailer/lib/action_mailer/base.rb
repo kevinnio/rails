@@ -16,7 +16,7 @@ module ActionMailer
   #
   # To use Action Mailer, you need to create a mailer model.
   #
-  #   $ rails generate mailer Notifier
+  #   $ bin/rails generate mailer Notifier
   #
   # The generated model inherits from <tt>ApplicationMailer</tt> which in turn
   # inherits from <tt>ActionMailer::Base</tt>. A mailer model defines methods
@@ -408,7 +408,7 @@ module ActionMailer
   #     really useful if you need to validate a self-signed and/or a wildcard certificate. You can use the name
   #     of an OpenSSL verify constant (<tt>'none'</tt> or <tt>'peer'</tt>) or directly the constant
   #     (<tt>OpenSSL::SSL::VERIFY_NONE</tt> or <tt>OpenSSL::SSL::VERIFY_PEER</tt>).
-  #     <tt>:ssl/:tls</tt> Enables the SMTP connection to use SMTP/TLS (SMTPS: SMTP over direct TLS connection)
+  #   * <tt>:ssl/:tls</tt> Enables the SMTP connection to use SMTP/TLS (SMTPS: SMTP over direct TLS connection)
   #
   # * <tt>sendmail_settings</tt> - Allows you to override options for the <tt>:sendmail</tt> delivery method.
   #   * <tt>:location</tt> - The location of the sendmail executable. Defaults to <tt>/usr/sbin/sendmail</tt>.
@@ -590,6 +590,14 @@ module ActionMailer
         end
       end
 
+      # Returns an email in the format "Name <email@example.com>".
+      def email_address_with_name(address, name)
+        Mail::Address.new.tap do |builder|
+          builder.address = address
+          builder.display_name = name
+        end.to_s
+      end
+
     private
       def set_payload_for_mail(payload, mail)
         payload[:mail]               = mail.encoded
@@ -611,6 +619,7 @@ module ActionMailer
           super
         end
       end
+      ruby2_keywords(:method_missing) if respond_to?(:ruby2_keywords, true)
 
       def respond_to_missing?(method, include_all = false)
         action_methods.include?(method.to_s) || super
@@ -654,6 +663,11 @@ module ActionMailer
     # Returns the name of the mailer object.
     def mailer_name
       self.class.mailer_name
+    end
+
+    # Returns an email in the format "Name <email@example.com>".
+    def email_address_with_name(address, name)
+      self.class.email_address_with_name(address, name)
     end
 
     # Allows you to pass random and unusual headers to the new <tt>Mail::Message</tt>
@@ -737,7 +751,7 @@ module ActionMailer
     end
 
     class LateAttachmentsProxy < SimpleDelegator
-      def inline; _raise_error end
+      def inline; self end
       def []=(_name, _content); _raise_error end
 
       private
@@ -905,7 +919,7 @@ module ActionMailer
       # If the subject has interpolations, you can pass them through the +interpolations+ parameter.
       def default_i18n_subject(interpolations = {}) # :doc:
         mailer_scope = self.class.mailer_name.tr("/", ".")
-        I18n.t(:subject, interpolations.merge(scope: [mailer_scope, action_name], default: action_name.humanize))
+        I18n.t(:subject, **interpolations.merge(scope: [mailer_scope, action_name], default: action_name.humanize))
       end
 
       # Emails do not support relative path links.

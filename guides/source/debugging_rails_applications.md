@@ -217,7 +217,7 @@ irb(main):001:0> Article.pamplemousse
 => #<Comment id: 2, author: "1", body: "Well, actually...", article_id: 1, created_at: "2018-10-19 00:56:10", updated_at: "2018-10-19 00:56:10">
 ```
 
-After running `ActiveRecord::Base.verbose_query_logs = true` in the `rails console` session to enable verbose query logs and running the method again, it becomes obvious what single line of code is generating all these discrete database calls:
+After running `ActiveRecord::Base.verbose_query_logs = true` in the `bin/rails console` session to enable verbose query logs and running the method again, it becomes obvious what single line of code is generating all these discrete database calls:
 
 ```
 irb(main):003:0> Article.pamplemousse
@@ -350,10 +350,10 @@ For example:
 
 ```bash
 => Booting Puma
-=> Rails 5.1.0 application starting in development on http://0.0.0.0:3000
-=> Run `rails server -h` for more startup options
+=> Rails 6.0.0 application starting in development
+=> Run `bin/rails server --help` for more startup options
 Puma starting in single mode...
-* Version 3.4.0 (ruby 2.3.1-p112), codename: Owl Bowl Brawl
+* Version 3.12.1 (ruby 2.5.7-p206), codename: Llamas in Pajamas
 * Min threads: 5, max threads: 5
 * Environment: development
 * Listening on tcp://localhost:3000
@@ -633,7 +633,7 @@ You can also inspect for an object method this way:
 
 ```
 (byebug) var instance Article.new
-@_start_transaction_state = {}
+@_start_transaction_state = nil
 @aggregation_cache = {}
 @association_cache = {}
 @attributes = #<ActiveRecord::AttributeSet:0x007fd0682a9b18 @attributes={"id"=>#<ActiveRecord::Attribute::FromDatabase:0x007fd0682a9a00 @name="id", @value_be...
@@ -939,7 +939,7 @@ Debugging Memory Leaks
 A Ruby application (on Rails or not), can leak memory — either in the Ruby code
 or at the C code level.
 
-In this section, you will learn how to find and fix such leaks by using tool
+In this section, you will learn how to find and fix such leaks by using tools
 such as Valgrind.
 
 ### Valgrind
@@ -953,8 +953,12 @@ extension in the interpreter calls `malloc()` but doesn't properly call
 `free()`, this memory won't be available until the app terminates.
 
 For further information on how to install Valgrind and use with Ruby, refer to
-[Valgrind and Ruby](http://blog.evanweaver.com/articles/2008/02/05/valgrind-and-ruby/)
+[Valgrind and Ruby](https://blog.evanweaver.com/2008/02/05/valgrind-and-ruby/)
 by Evan Weaver.
+
+### Find a Memory Leak
+There is an excellent article about detecting and fixing memory leaks at Derailed, [which you can read here](https://github.com/schneems/derailed_benchmarks#is-my-app-leaking-memory).
+
 
 Plugins for Debugging
 ---------------------

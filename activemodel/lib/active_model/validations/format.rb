@@ -6,7 +6,7 @@ module ActiveModel
       def validate_each(record, attribute, value)
         if options[:with]
           regexp = option_call(record, :with)
-          record_error(record, attribute, :with, value) if value.to_s !~ regexp
+          record_error(record, attribute, :with, value) unless regexp.match?(value.to_s)
         elsif options[:without]
           regexp = option_call(record, :without)
           record_error(record, attribute, :without, value) if regexp.match?(value.to_s)
@@ -29,7 +29,7 @@ module ActiveModel
         end
 
         def record_error(record, attribute, name, value)
-          record.errors.add(attribute, :invalid, options.except(name).merge!(value: value))
+          record.errors.add(attribute, :invalid, **options.except(name).merge!(value: value))
         end
 
         def check_options_validity(name)

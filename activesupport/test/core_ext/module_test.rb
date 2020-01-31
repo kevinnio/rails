@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "../abstract_unit"
 require "active_support/core_ext/module"
 
 Somewhere = Struct.new(:street, :city) do
@@ -108,6 +108,24 @@ class DecoratedReserved
 
   def initialize(kase)
     @case = kase
+  end
+end
+
+class Maze
+  attr_accessor :cavern, :passages
+end
+
+class Cavern
+  delegate_missing_to :target
+
+  attr_reader :maze
+
+  def initialize(maze)
+    @maze = maze
+  end
+
+  def target
+    @maze.passages = :twisty
   end
 end
 
@@ -409,6 +427,17 @@ class ModuleTest < ActiveSupport::TestCase
     assert_equal 42, DecoratedTester.new(@david).extra_missing
 
     assert_respond_to DecoratedTester.new(@david), :extra_missing
+  end
+
+  def test_delegate_missing_to_does_not_interfere_with_marshallization
+    maze = Maze.new
+    maze.cavern = Cavern.new(maze)
+
+    array = [maze, nil]
+    serialized_array = Marshal.dump(array)
+    deserialized_array = Marshal.load(serialized_array)
+
+    assert_nil deserialized_array[1]
   end
 
   def test_delegate_with_case

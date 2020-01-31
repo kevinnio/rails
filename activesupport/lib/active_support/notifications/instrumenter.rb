@@ -52,11 +52,13 @@ module ActiveSupport
     end
 
     class Event
-      attr_reader :name, :time, :end, :transaction_id, :payload, :children
+      attr_reader :name, :time, :end, :transaction_id, :children
+      attr_accessor :payload
 
       def self.clock_gettime_supported? # :nodoc:
-        defined?(Process::CLOCK_PROCESS_CPUTIME_ID) &&
-          !Gem.win_platform?
+        defined?(Process::CLOCK_THREAD_CPUTIME_ID) &&
+          !Gem.win_platform? &&
+          !RUBY_PLATFORM.match?(/solaris/i)
       end
       private_class_method :clock_gettime_supported?
 
@@ -141,7 +143,7 @@ module ActiveSupport
 
         if clock_gettime_supported?
           def now_cpu
-            Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID)
+            Process.clock_gettime(Process::CLOCK_THREAD_CPUTIME_ID)
           end
         else
           def now_cpu

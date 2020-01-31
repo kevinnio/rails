@@ -42,9 +42,11 @@ module ActionDispatch
       ActionDispatch::Http::URL.tld_length = app.config.action_dispatch.tld_length
       ActionDispatch::Request.ignore_accept_header = app.config.action_dispatch.ignore_accept_header
       ActionDispatch::Request::Utils.perform_deep_munge = app.config.action_dispatch.perform_deep_munge
-      ActionDispatch::Response.default_charset = app.config.action_dispatch.default_charset || app.config.encoding
-      ActionDispatch::Response.default_headers = app.config.action_dispatch.default_headers
-      ActionDispatch::Response.return_only_media_type_on_content_type = app.config.action_dispatch.return_only_media_type_on_content_type
+      ActiveSupport.on_load(:action_dispatch_response) do
+        self.default_charset = app.config.action_dispatch.default_charset || app.config.encoding
+        self.default_headers = app.config.action_dispatch.default_headers
+        self.return_only_media_type_on_content_type = app.config.action_dispatch.return_only_media_type_on_content_type
+      end
 
       ActionDispatch::ExceptionWrapper.rescue_responses.merge!(config.action_dispatch.rescue_responses)
       ActionDispatch::ExceptionWrapper.rescue_templates.merge!(config.action_dispatch.rescue_templates)
@@ -53,12 +55,6 @@ module ActionDispatch
       ActionDispatch::Cookies::CookieJar.always_write_cookie = config.action_dispatch.always_write_cookie
 
       ActionDispatch.test_app = app
-    end
-
-    initializer "action_dispatch.system_tests" do |app|
-      ActiveSupport.on_load(:action_dispatch_system_test_case) do
-        include app.routes.url_helpers
-      end
     end
   end
 end

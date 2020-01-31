@@ -306,7 +306,7 @@ module ActionView
             RUBY
           when Proc
             define_method :_layout_from_proc, &_layout
-            protected :_layout_from_proc
+            private :_layout_from_proc
             <<-RUBY
               result = _layout_from_proc(#{_layout.arity == 0 ? '' : 'self'})
               return #{default_behavior} if result.nil?
@@ -395,7 +395,7 @@ module ActionView
     end
 
     def _normalize_layout(value)
-      value.is_a?(String) && value !~ /\blayouts/ ? "layouts/#{value}" : value
+      value.is_a?(String) && !value.match?(/\blayouts/) ? "layouts/#{value}" : value
     end
 
     # Returns the default layout for this controller.

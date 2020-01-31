@@ -14,7 +14,7 @@ module ActiveRecord
       @returning = (connection.supports_insert_returning? ? primary_keys : false) if @returning.nil?
       @returning = false if @returning == []
 
-      @unique_by = find_unique_index_for(unique_by) if unique_by
+      @unique_by = find_unique_index_for(unique_by)
       @on_duplicate = :skip if @on_duplicate == :update && updatable_columns.empty?
 
       ensure_valid_options_for_connection!
@@ -24,7 +24,7 @@ module ActiveRecord
       message = +"#{model} "
       message << "Bulk " if inserts.many?
       message << (on_duplicate == :update ? "Upsert" : "Insert")
-      connection.exec_query to_sql, message
+      connection.exec_insert_all to_sql, message
     end
 
     def updatable_columns
@@ -32,7 +32,7 @@ module ActiveRecord
     end
 
     def primary_keys
-      Array(model.primary_key)
+      Array(connection.schema_cache.primary_keys(model.table_name))
     end
 
 
@@ -57,12 +57,15 @@ module ActiveRecord
 
     private
       def find_unique_index_for(unique_by)
-        match = Array(unique_by).map(&:to_s)
+        name_or_columns = unique_by || model.primary_key
+        match = Array(name_or_columns).map(&:to_s)
 
         if index = unique_indexes.find { |i| match.include?(i.name) || i.columns == match }
           index
+        elsif match == primary_keys
+          unique_by.nil? ? nil : ActiveRecord::ConnectionAdapters::IndexDefinition.new(model.table_name, "#{model.table_name}_primary_key", true, match)
         else
-          raise ArgumentError, "No unique index found for #{unique_by}"
+          raise ArgumentError, "No unique index found for #{name_or_columns}"
         end
       end
 
@@ -110,8 +113,7 @@ module ActiveRecord
         end
       end
 
-
-      class Builder
+      class Builder # :nodoc:
         attr_reader :model
 
         delegate :skip_duplicates?, :update_duplicates?, :keys, to: :insert_all
@@ -121,7 +123,7 @@ module ActiveRecord
         end
 
         def into
-          "INTO #{model.quoted_table_name}(#{columns_list})"
+          "INTO #{model.quoted_table_name} (#{columns_list})"
         end
 
         def values_list

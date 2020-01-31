@@ -42,7 +42,7 @@ module Rails
   #   end
   #
   #   # lib/my_gem.rb
-  #   require 'my_gem/railtie' if defined?(Rails)
+  #   require 'my_gem/railtie' if defined?(Rails::Railtie)
   #
   # == Initializers
   #
@@ -192,6 +192,7 @@ module Rails
             super
           end
         end
+        ruby2_keywords(:method_missing) if respond_to?(:ruby2_keywords, true)
 
         # receives an instance variable identifier, set the variable value if is
         # blank and append given block to value, which will be used later in

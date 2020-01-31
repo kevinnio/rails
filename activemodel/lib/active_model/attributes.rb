@@ -82,7 +82,6 @@ module ActiveModel
     # Returns a hash of all the attributes with their names as keys and the values of the attributes as values.
     #
     #   class Person
-    #     include ActiveModel::Model
     #     include ActiveModel::Attributes
     #
     #     attribute :name, :string
@@ -110,6 +109,11 @@ module ActiveModel
     #   # => ["name", "age"]
     def attribute_names
       @attributes.keys
+    end
+
+    def freeze
+      @attributes = @attributes.clone.freeze
+      super
     end
 
     private

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "abstract_unit"
+require_relative "abstract_unit"
 
 module CallbacksTest
   class Record
@@ -256,7 +256,7 @@ module CallbacksTest
     end
 
     def respond_to_missing?(sym)
-      sym =~ /^(log|wrap)_/ || super
+      sym.match?(/^(log|wrap)_/) || super
     end
   end
 

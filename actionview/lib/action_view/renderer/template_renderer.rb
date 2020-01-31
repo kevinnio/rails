@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/object/try"
-
 module ActionView
   class TemplateRenderer < AbstractRenderer #:nodoc:
     def render(context, options)
@@ -54,7 +52,7 @@ module ActionView
       # supplied as well.
       def render_template(view, template, layout_name, locals)
         render_with_layout(view, template, layout_name, locals) do |layout|
-          instrument(:template, identifier: template.identifier, layout: layout.try(:virtual_path)) do
+          instrument(:template, identifier: template.identifier, layout: (layout && layout.virtual_path)) do
             template.render(view, locals) { |*name| view._layout_for(*name) }
           end
         end
@@ -95,7 +93,7 @@ module ActionView
             end
           rescue ActionView::MissingTemplate
             all_details = @details.merge(formats: @lookup_context.default_formats)
-            raise unless template_exists?(layout, nil, false, [], all_details)
+            raise unless template_exists?(layout, nil, false, [], **all_details)
           end
         when Proc
           resolve_layout(layout.call(@lookup_context, formats), keys, formats)

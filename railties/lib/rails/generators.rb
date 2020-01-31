@@ -128,11 +128,6 @@ module Rails
         end
       end
 
-      # Remove the color from output.
-      def no_color!
-        Thor::Base.shell = Thor::Shell::Basic
-      end
-
       # Returns an array of generator namespaces that are hidden.
       # Generator namespaces may be hidden for a variety of reasons.
       # Some are aliased such as "rails:migration" and can be
@@ -165,7 +160,8 @@ module Rails
             "#{css}:scaffold",
             "#{css}:assets",
             "css:assets",
-            "css:scaffold"
+            "css:scaffold",
+            "action_text:install"
           ]
         end
       end
@@ -279,7 +275,7 @@ module Rails
 
           puts <<~MSG
             Could not find generator '#{namespace}'. #{suggestion_msg}
-            Run `rails generate --help` for more options.
+            Run `bin/rails generate --help` for more options.
           MSG
         end
       end
